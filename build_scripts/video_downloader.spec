@@ -1,14 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+from pathlib import Path
+
 block_cipher = None
+
+# resources 폴더가 있을 때만 포함
+datas = []
+resources_path = Path('../resources')
+if resources_path.exists():
+    datas.append(('../resources', 'resources'))
 
 a = Analysis(
     ['../src/main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('../resources', 'resources'),
-    ],
+    datas=datas,
     hiddenimports=['yt_dlp', 'qasync'],
     hookspath=[],
     hooksconfig={},
