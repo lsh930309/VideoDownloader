@@ -21,7 +21,7 @@ class VideoDownloader:
 
     def download(self, url, progress_callback=None, status_callback=None):
         self.cancel_requested = False
-        
+
         output_path = config.get("download_path")
         quality = config.get("default_quality")
         video_format = config.get("default_format")
@@ -35,14 +35,38 @@ class VideoDownloader:
             height = quality.replace("p", "")
             format_str = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
 
+        # 성능 설정 값 가져오기
+        concurrent_fragments = config.get("concurrent_fragments")
+        chunk_size_mb = config.get("chunk_size_mb")
+        buffer_size_mb = config.get("buffer_size_mb")
+        speed_limit_mbps = config.get("speed_limit_mbps")
+
+        # 속도 제한 계산 (Mbps -> bytes/s)
+        rate_limit = None if speed_limit_mbps == 0 else int(speed_limit_mbps * 1024 * 1024 / 8)
+
         ydl_opts = {
             'format': format_str,
             'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
             'merge_output_format': video_format,
             'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, status_callback)],
-            # 'logger': MyLogger(), # TODO: Implement logger if needed
             'quiet': True,
             'no_warnings': True,
+
+            # 성능 최적화 옵션 (설정 값 사용)
+            'concurrent_fragment_downloads': concurrent_fragments,
+            'http_chunk_size': chunk_size_mb * 1024 * 1024,
+            'retries': 10,
+            'fragment_retries': 10,
+            'buffersize': buffer_size_mb * 1024 * 1024,
+
+            # 네트워크 최적화
+            'socket_timeout': 30,
+            'source_address': None,
+            'prefer_insecure': False,
+
+            # 다운로드 속도 제한
+            'ratelimit': rate_limit,
+            'throttledratelimit': None,
         }
 
         if ffmpeg_path:

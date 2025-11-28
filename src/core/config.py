@@ -9,9 +9,29 @@ class Config:
         "default_quality": "Best", # Best, 2160p, 1440p, 1080p, 720p, 480p, 360p
         "default_format": "mp4", # mp4, mkv, ts
         "keep_original": False,
+
+        # 성능 옵션
+        "concurrent_fragments": 8,  # 동시 다운로드 프래그먼트 수 (1-16)
+        "chunk_size_mb": 10,  # 청크 크기 (MB)
+        "buffer_size_mb": 16,  # 버퍼 크기 (MB)
+        "speed_limit_mbps": 0,  # 속도 제한 (0 = 무제한, Mbps)
     }
 
-    CONFIG_FILE = Path("config.json")
+    # %APPDATA%에 설정 파일 저장
+    @staticmethod
+    def get_config_dir():
+        """설정 디렉토리 경로 반환 (%APPDATA%/VideoDownloader)"""
+        if os.name == 'nt':  # Windows
+            appdata = os.getenv('APPDATA')
+            config_dir = Path(appdata) / "VideoDownloader"
+        else:  # Linux/Mac
+            config_dir = Path.home() / ".config" / "VideoDownloader"
+
+        # 디렉토리가 없으면 생성
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir
+
+    CONFIG_FILE = get_config_dir.__func__() / "config.json"
 
     def __init__(self):
         self.config = self.load_config()
