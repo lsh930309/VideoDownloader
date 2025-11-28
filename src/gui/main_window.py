@@ -1,14 +1,35 @@
 import asyncio
 import sys
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLineEdit, QPushButton, QProgressBar, QTextEdit, 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                             QLineEdit, QPushButton, QProgressBar, QTextEdit,
                              QLabel, QComboBox, QMessageBox, QMenuBar)
-from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal, QObject
 from qasync import QEventLoop, asyncSlot
 
 from src.core.downloader import VideoDownloader
 from src.core.config import config
 from src.gui.settings_dialog import SettingsDialog
+
+
+class OutputRedirector(QObject):
+    """stdout/stderr를 GUI 로그 영역으로 리다이렉트"""
+    output_written = pyqtSignal(str)
+
+    def __init__(self, original_stream=None):
+        super().__init__()
+        self.original_stream = original_stream
+
+    def write(self, text):
+        if text.strip():  # 빈 줄 무시
+            self.output_written.emit(text.rstrip())
+        # 원래 스트림에도 출력 (디버깅용)
+        if self.original_stream:
+            self.original_stream.write(text)
+            self.original_stream.flush()
+
+    def flush(self):
+        if self.original_stream:
+            self.original_stream.flush()
 
 class MainWindow(QMainWindow):
     progress_signal = pyqtSignal(float)
@@ -18,14 +39,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("비디오 다운로더")
         self.resize(600, 450)
-        
+
         self.downloader = VideoDownloader()
-        
+
         # Connect signals
         self.progress_signal.connect(self.update_progress)
         self.status_signal.connect(self.update_status)
 
         self.setup_ui()
+
+        # stdout/stderr 리다이렉트 설정
+        self.setup_output_redirect()
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -88,9 +112,7 @@ class MainWindow(QMainWindow):
 
     def log(self, message):
         self.log_area.append(message)
-        # Scroll to bottom
-        sb = self.log_area.verticalScrollBar()
-        sb.setValue(sb.maximum())
+        self.scroll_to_bottom()
 
     def update_progress(self, percent):
         self.progress_bar.setValue(int(percent))
@@ -137,3 +159,42 @@ class MainWindow(QMainWindow):
 
     def update_status_safe(self, message):
         self.status_signal.emit(message)
+
+    def setup_output_redirect(self):
+        """stdout/stderr를 로그 영역으로 리다이렉트"""
+        # stdout 리다이렉트
+        self.stdout_redirector = OutputRedirector(sys.stdout)
+        self.stdout_redirector.output_written.connect(self.append_log_output)
+        sys.stdout = self.stdout_redirector
+
+        # stderr 리다이렉트 (에러 메시지)
+        self.stderr_redirector = OutputRedirector(sys.stderr)
+        self.stderr_redirector.output_written.connect(self.append_log_error)
+        sys.stderr = self.stderr_redirector
+
+        # 초기 메시지
+        print("비디오 다운로더 시작됨")
+        print(f"설정 파일 위치: {config.CONFIG_FILE}")
+
+    def append_log_output(self, text):
+        """일반 출력을 로그에 추가"""
+        self.log_area.append(f"<span style='color: black;'>{text}</span>")
+        self.scroll_to_bottom()
+
+    def append_log_error(self, text):
+        """에러 출력을 로그에 추가 (빨간색)"""
+        self.log_area.append(f"<span style='color: red;'>[ERROR] {text}</span>")
+        self.scroll_to_bottom()
+
+    def scroll_to_bottom(self):
+        """로그를 맨 아래로 스크롤"""
+        sb = self.log_area.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def closeEvent(self, event):
+        """윈도우 닫을 때 stdout/stderr 복원"""
+        if hasattr(self, 'stdout_redirector'):
+            sys.stdout = self.stdout_redirector.original_stream
+        if hasattr(self, 'stderr_redirector'):
+            sys.stderr = self.stderr_redirector.original_stream
+        event.accept()

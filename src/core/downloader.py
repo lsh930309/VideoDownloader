@@ -27,6 +27,10 @@ class VideoDownloader:
         video_format = config.get("default_format")
         ffmpeg_path = config.get("ffmpeg_path")
 
+        print(f"[Downloader] URL: {url}")
+        print(f"[Downloader] 출력 경로: {output_path}")
+        print(f"[Downloader] 화질: {quality}, 포맷: {video_format}")
+
         # Format selection logic
         if quality == "Best":
             format_str = f"bestvideo+bestaudio/best"
@@ -41,8 +45,14 @@ class VideoDownloader:
         buffer_size_mb = config.get("buffer_size_mb")
         speed_limit_mbps = config.get("speed_limit_mbps")
 
+        print(f"[Downloader] 성능 설정: {concurrent_fragments}개 동시 다운로드, 청크 {chunk_size_mb}MB, 버퍼 {buffer_size_mb}MB")
+
         # 속도 제한 계산 (Mbps -> bytes/s)
         rate_limit = None if speed_limit_mbps == 0 else int(speed_limit_mbps * 1024 * 1024 / 8)
+        if speed_limit_mbps > 0:
+            print(f"[Downloader] 속도 제한: {speed_limit_mbps} Mbps")
+        else:
+            print(f"[Downloader] 속도 제한: 없음 (최대 속도)")
 
         ydl_opts = {
             'format': format_str,
