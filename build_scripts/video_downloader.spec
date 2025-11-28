@@ -1,22 +1,41 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 from pathlib import Path
 
 block_cipher = None
 
+# 프로젝트 루트 경로 (spec 파일 위치 기준)
+spec_root = os.path.abspath(SPECPATH)
+project_root = os.path.dirname(spec_root)
+
 # resources 폴더가 있을 때만 포함
 datas = []
-resources_path = Path('../resources')
-if resources_path.exists():
-    datas.append(('../resources', 'resources'))
+resources_path = os.path.join(project_root, 'resources')
+if os.path.exists(resources_path):
+    datas.append((resources_path, 'resources'))
+
+# hiddenimports에 src 패키지 추가
+hiddenimports = [
+    'yt_dlp',
+    'qasync',
+    'src',
+    'src.core',
+    'src.core.config',
+    'src.core.downloader',
+    'src.gui',
+    'src.gui.main_window',
+    'src.gui.settings_dialog',
+    'src.utils',
+]
 
 a = Analysis(
-    ['../src/main.py'],
-    pathex=[],
+    [os.path.join(project_root, 'run.py')],
+    pathex=[project_root],
     binaries=[],
     datas=datas,
-    hiddenimports=['yt_dlp', 'qasync'],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

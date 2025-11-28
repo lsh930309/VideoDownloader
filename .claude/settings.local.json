@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python build_scripts/build.py:*)",
+      "Bash(pyinstaller:*)",
+      "Bash(gemini -p \"PyInstaller로 빌드한 Python GUI 앱(PyQt6 기반)에서 ''ModuleNotFoundError: No module named src'' 오류가 발생했어. 나는 다음과 같이 spec 파일을 수정했어:\n\n1. src 디렉토리 전체를 datas에 추가: datas.append((src_path, ''src''))\n2. hiddenimports에 src 패키지의 모든 서브모듈 추가\n3. pathex에 프로젝트 루트 추가\n\n빌드는 성공했고 dist/VideoDownloader/_internal/src 디렉토리에 파일들이 정상적으로 포함되어 있어. 하지만 실행 시 여전히 ''No module named src'' 오류가 발생할 가능성이 있어. 이 문제를 완전히 해결하기 위해 추가로 확인하거나 수정해야 할 사항이 있을까? 특히 PyInstaller 환경에서 src 패키지를 import할 때 주의할 점을 알려줘.\")",
+      "Bash(dist/VideoDownloader/VideoDownloader.exe:*)",
+      "Bash(python build.py:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
