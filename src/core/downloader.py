@@ -1,10 +1,12 @@
 import yt_dlp
 import os
 from .config import config
+from .ffmpeg_installer import FFmpegInstaller
 
 class VideoDownloader:
     def __init__(self):
         self.cancel_requested = False
+        self.ffmpeg_ensured = False
 
     def get_video_info(self, url):
         ydl_opts = {
@@ -21,6 +23,26 @@ class VideoDownloader:
 
     def download(self, url, progress_callback=None, status_callback=None):
         self.cancel_requested = False
+
+        # FFmpeg 자동 설치 확인 (최초 1회만)
+        if not self.ffmpeg_ensured:
+            try:
+                if status_callback:
+                    status_callback("FFmpeg 확인 중...")
+
+                ffmpeg_path = FFmpegInstaller.ensure_ffmpeg(
+                    progress_callback=lambda p: progress_callback(p * 0.1) if progress_callback else None
+                )
+
+                if status_callback:
+                    status_callback("FFmpeg 확인 완료")
+
+                self.ffmpeg_ensured = True
+            except Exception as e:
+                print(f"[FFmpeg] 자동 설치 실패: {e}")
+                if status_callback:
+                    status_callback(f"FFmpeg 설치 실패: {e}")
+                # FFmpeg 없이도 일부 다운로드는 가능하므로 계속 진행
 
         output_path = config.get("download_path")
         quality = config.get("default_quality")

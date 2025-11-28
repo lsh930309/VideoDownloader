@@ -1,9 +1,27 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QFileDialog, QComboBox,
                              QCheckBox, QSpinBox, QTabWidget, QWidget, QGroupBox,
-                             QFormLayout)
-from PyQt6.QtCore import Qt
+                             QFormLayout, QMessageBox, QProgressDialog)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from src.core.config import config
+from src.core.ffmpeg_installer import FFmpegInstaller
+
+
+class FFmpegInstallThread(QThread):
+    """FFmpeg 설치를 백그라운드에서 수행하는 스레드"""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def run(self):
+        try:
+            ffmpeg_path = FFmpegInstaller.download_ffmpeg(
+                progress_callback=lambda p: self.progress.emit(p)
+            )
+            self.finished.emit(ffmpeg_path)
+        except Exception as e:
+            self.error.emit(str(e))
+
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -74,6 +92,19 @@ class SettingsDialog(QDialog):
         ffmpeg_note = QLabel("비어있으면 시스템 PATH에서 찾습니다")
         ffmpeg_note.setStyleSheet("color: gray; font-size: 10px;")
         ffmpeg_layout.addRow("", ffmpeg_note)
+
+        # FFmpeg 자동 설치 버튼
+        auto_install_layout = QHBoxLayout()
+        self.check_ffmpeg_btn = QPushButton("FFmpeg 확인")
+        self.check_ffmpeg_btn.clicked.connect(self.check_ffmpeg)
+        auto_install_layout.addWidget(self.check_ffmpeg_btn)
+
+        self.auto_install_btn = QPushButton("FFmpeg 자동 설치")
+        self.auto_install_btn.clicked.connect(self.auto_install_ffmpeg)
+        auto_install_layout.addWidget(self.auto_install_btn)
+        auto_install_layout.addStretch()
+
+        ffmpeg_layout.addRow("", auto_install_layout)
 
         ffmpeg_group.setLayout(ffmpeg_layout)
         layout.addWidget(ffmpeg_group)
@@ -205,6 +236,91 @@ class SettingsDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(self, "FFmpeg 실행 파일 선택", filter="Executables (*.exe)")
         if path:
             self.ffmpeg_edit.setText(path)
+
+    def check_ffmpeg(self):
+        """FFmpeg 설치 여부 확인"""
+        ffmpeg_path = FFmpegInstaller.check_ffmpeg()
+        if ffmpeg_path:
+            QMessageBox.information(
+                self,
+                "FFmpeg 확인",
+                f"FFmpeg가 설치되어 있습니다.\n\n경로: {ffmpeg_path}"
+            )
+            self.ffmpeg_edit.setText(ffmpeg_path)
+        else:
+            reply = QMessageBox.question(
+                self,
+                "FFmpeg 확인",
+                "FFmpeg가 설치되어 있지 않습니다.\n\n지금 자동으로 설치하시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.auto_install_ffmpeg()
+
+    def auto_install_ffmpeg(self):
+        """FFmpeg 자동 설치"""
+        # 이미 설치되어 있는지 확인
+        existing_path = FFmpegInstaller.check_ffmpeg()
+        if existing_path:
+            reply = QMessageBox.question(
+                self,
+                "FFmpeg 자동 설치",
+                f"FFmpeg가 이미 설치되어 있습니다.\n경로: {existing_path}\n\n다시 설치하시겠습니까?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        # 진행 대화상자 생성
+        self.progress_dialog = QProgressDialog("FFmpeg 다운로드 중...", "취소", 0, 100, self)
+        self.progress_dialog.setWindowTitle("FFmpeg 설치")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setAutoClose(True)
+        self.progress_dialog.setAutoReset(True)
+        self.progress_dialog.canceled.connect(self.cancel_install)
+
+        # 설치 스레드 시작
+        self.install_thread = FFmpegInstallThread()
+        self.install_thread.progress.connect(self.update_install_progress)
+        self.install_thread.finished.connect(self.install_finished)
+        self.install_thread.error.connect(self.install_error)
+        self.install_thread.start()
+
+        self.progress_dialog.show()
+
+    def cancel_install(self):
+        """설치 취소"""
+        if hasattr(self, 'install_thread') and self.install_thread.isRunning():
+            self.install_thread.terminate()
+            self.install_thread.wait()
+
+    def update_install_progress(self, percent):
+        """설치 진행률 업데이트"""
+        if hasattr(self, 'progress_dialog'):
+            self.progress_dialog.setValue(percent)
+
+    def install_finished(self, ffmpeg_path):
+        """설치 완료"""
+        if hasattr(self, 'progress_dialog'):
+            self.progress_dialog.close()
+
+        QMessageBox.information(
+            self,
+            "FFmpeg 설치 완료",
+            f"FFmpeg 설치가 완료되었습니다!\n\n경로: {ffmpeg_path}\n\n설정에 자동으로 저장되었습니다."
+        )
+        self.ffmpeg_edit.setText(ffmpeg_path)
+
+    def install_error(self, error_msg):
+        """설치 실패"""
+        if hasattr(self, 'progress_dialog'):
+            self.progress_dialog.close()
+
+        QMessageBox.critical(
+            self,
+            "FFmpeg 설치 실패",
+            f"FFmpeg 설치 중 오류가 발생했습니다:\n\n{error_msg}\n\n수동으로 설치하거나 다시 시도해주세요."
+        )
 
     def save_settings(self):
         # 일반 설정 저장
