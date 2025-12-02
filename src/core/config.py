@@ -11,9 +11,9 @@ class Config:
         "keep_original": False,
 
         # 성능 옵션
-        "concurrent_fragments": 8,  # 동시 다운로드 프래그먼트 수 (1-16)
+        "concurrent_fragments": 16,  # 동시 다운로드 프래그먼트 수 (1-32, 기본 16)
         "chunk_size_mb": 10,  # 청크 크기 (MB)
-        "buffer_size_mb": 16,  # 버퍼 크기 (MB)
+        "buffer_size_mb": 16,  # 버퍼 크기 (MB) - 사용 안 함
         "speed_limit_mbps": 0,  # 속도 제한 (0 = 무제한, Mbps)
     }
 

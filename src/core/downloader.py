@@ -55,11 +55,13 @@ class VideoDownloader:
 
         # Format selection logic
         if quality == "Best":
-            format_str = f"bestvideo+bestaudio/best"
+            # 최고 화질: VP9 > AVC1 순서로 선호, 오디오는 최고 품질
+            format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
         else:
             # Map quality string (e.g., "1080p") to height
             height = quality.replace("p", "")
-            format_str = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            # 지정 화질 이하로 제한, mp4 코덱 선호
+            format_str = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]"
 
         # 성능 설정 값 가져오기
         concurrent_fragments = config.get("concurrent_fragments")
@@ -89,7 +91,13 @@ class VideoDownloader:
             'http_chunk_size': chunk_size_mb * 1024 * 1024,
             'retries': 10,
             'fragment_retries': 10,
-            'buffersize': buffer_size_mb * 1024 * 1024,
+            # buffersize는 yt-dlp 자동 조절에 맡김 (속도 저하 방지)
+
+            # 치지직/라이브 영상 재생 호환성 해결 (FFmpeg Remux)
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': video_format,
+            }],
 
             # 네트워크 최적화
             'socket_timeout': 30,
