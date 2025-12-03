@@ -24,7 +24,7 @@ class NetworkBenchmark:
     PARTIAL_DOWNLOAD_LIMIT_MB = 824
 
     # 성능 차이 임계값 (10% 이내면 더 적은 워커 선택)
-    PERFORMANCE_THRESHOLD = 0.10
+    PERFORMANCE_THRESHOLD = 0.05
 
     @staticmethod
     def run_benchmark(progress_callback=None, status_callback=None):

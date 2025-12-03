@@ -1,8 +1,10 @@
 import asyncio
 import sys
+import os
+import subprocess
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QPushButton, QProgressBar, QTextEdit,
-                             QLabel, QComboBox, QMessageBox, QMenuBar)
+                             QLabel, QComboBox, QMessageBox, QMenuBar, QApplication)
 from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal, QObject
 from qasync import QEventLoop, asyncSlot
 
@@ -41,6 +43,7 @@ class MainWindow(QMainWindow):
         self.resize(600, 450)
 
         self.downloader = VideoDownloader()
+        self.last_status_line = None  # \r 효과를 위한 마지막 상태 라인 추적
 
         # Connect signals
         self.progress_signal.connect(self.update_progress)
@@ -67,6 +70,13 @@ class MainWindow(QMainWindow):
         self.url_input.setPlaceholderText("동영상 주소를 입력하세요...")
         url_layout.addWidget(QLabel("주소:"))
         url_layout.addWidget(self.url_input)
+
+        # 붙여넣기 버튼
+        paste_btn = QPushButton("붙여넣기")
+        paste_btn.clicked.connect(self.paste_url)
+        paste_btn.setFixedWidth(80)
+        url_layout.addWidget(paste_btn)
+
         layout.addLayout(url_layout)
 
         # Quick Options (Quality & Format overrides)
@@ -90,11 +100,22 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(options_layout)
 
-        # Download Button
-        self.download_btn = QPushButton("다운로드")
+        # Download Buttons
+        download_layout = QHBoxLayout()
+
+        self.download_btn = QPushButton("다운로드 시작")
         self.download_btn.clicked.connect(self.start_download)
         self.download_btn.setFixedHeight(40)
-        layout.addWidget(self.download_btn)
+        download_layout.addWidget(self.download_btn)
+
+        # 다운로드 폴더 열기 버튼
+        open_folder_btn = QPushButton("다운로드 폴더")
+        open_folder_btn.clicked.connect(self.open_download_folder)
+        open_folder_btn.setFixedHeight(40)
+        open_folder_btn.setFixedWidth(120)
+        download_layout.addWidget(open_folder_btn)
+
+        layout.addLayout(download_layout)
 
         # Progress Bar
         self.progress_bar = QProgressBar()
@@ -105,6 +126,31 @@ class MainWindow(QMainWindow):
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
         layout.addWidget(self.log_area)
+
+    def paste_url(self):
+        """클립보드 내용을 URL 입력란에 붙여넣기"""
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+        if text:
+            self.url_input.setText(text)
+            self.log(f"클립보드에서 URL 붙여넣기: {text}")
+
+    def open_download_folder(self):
+        """다운로드 폴더를 탐색기로 열기"""
+        download_path = config.get("download_path")
+
+        # 폴더가 존재하지 않으면 생성
+        if not os.path.exists(download_path):
+            os.makedirs(download_path)
+            self.log(f"다운로드 폴더 생성: {download_path}")
+
+        # Windows Explorer로 폴더 열기
+        if os.name == 'nt':  # Windows
+            os.startfile(download_path)
+        else:  # Linux/Mac
+            subprocess.Popen(['xdg-open', download_path])
+
+        self.log(f"다운로드 폴더 열기: {download_path}")
 
     def open_settings(self):
         dialog = SettingsDialog(self)
@@ -125,10 +171,28 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(int(percent))
 
     def update_status(self, message):
+        # 다운로드 진행 상황 메시지는 같은 줄에 덮어쓰기 (\r 효과)
         if "다운로드 중:" in message or "Downloading:" in message:
-             self.statusBar().showMessage(message)
+            # 상태바에도 표시
+            self.statusBar().showMessage(message)
+
+            # 로그 영역에서 마지막 줄 덮어쓰기
+            if self.last_status_line is not None:
+                # 마지막 줄 삭제
+                cursor = self.log_area.textCursor()
+                cursor.movePosition(cursor.MoveOperation.End)
+                cursor.select(cursor.SelectionType.BlockUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deletePreviousChar()  # 줄바꿈 문자 제거
+
+            # 새 상태 추가
+            self.log_area.append(f"<span style='color: blue;'>{message}</span>")
+            self.scroll_to_bottom()
+            self.last_status_line = message
         else:
-             self.log(message)
+            # 일반 메시지는 새 줄로 추가
+            self.last_status_line = None
+            self.log(message)
 
     @asyncSlot()
     async def start_download(self):

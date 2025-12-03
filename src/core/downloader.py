@@ -33,7 +33,7 @@ class VideoDownloader:
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'extract_flat': True, # Fast extraction
+            'extract_flat': False,  # Full extraction for detailed info
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -41,6 +41,86 @@ class VideoDownloader:
                 return info
         except Exception as e:
             raise e
+
+    def _print_video_info(self, info, quality, output_format, status_callback=None):
+        """영상 정보를 로그로 출력"""
+        print("\n" + "="*60)
+        print("영상 정보")
+        print("="*60)
+
+        # 제목
+        title = info.get('title', 'N/A')
+        print(f"제목: {title}")
+        if status_callback:
+            status_callback(f"영상 제목: {title}")
+
+        # 업로더
+        uploader = info.get('uploader', 'N/A')
+        print(f"업로더: {uploader}")
+
+        # 영상 길이 (초 → 시:분:초)
+        duration = info.get('duration', 0)
+        if duration:
+            hours = int(duration // 3600)
+            minutes = int((duration % 3600) // 60)
+            seconds = int(duration % 60)
+            duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes:02d}:{seconds:02d}"
+            print(f"영상 길이: {duration_str}")
+        else:
+            print(f"영상 길이: N/A")
+
+        # 선택된 해상도
+        print(f"요청 화질: {quality}")
+
+        # 다운로드될 포맷 찾기 (실제로 다운로드될 형식)
+        formats = info.get('formats', [])
+        if formats:
+            # 최고 화질 비디오 포맷 찾기
+            video_formats = [f for f in formats if f.get('vcodec') != 'none']
+            if video_formats:
+                best_video = max(video_formats, key=lambda x: x.get('height', 0) or 0)
+                video_format = best_video.get('ext', 'N/A')
+                video_height = best_video.get('height', 'N/A')
+                video_fps = best_video.get('fps', 'N/A')
+                video_vcodec = best_video.get('vcodec', 'N/A')
+
+                print(f"다운로드 포맷: {video_format} ({video_vcodec})")
+                print(f"실제 해상도: {video_height}p @ {video_fps}fps")
+
+        # 최종 출력 포맷
+        print(f"최종 출력 포맷: {output_format}")
+
+        # 예상 파일 크기
+        filesize = info.get('filesize') or info.get('filesize_approx')
+        if filesize:
+            filesize_mb = filesize / (1024 * 1024)
+            filesize_gb = filesize_mb / 1024
+            if filesize_gb >= 1:
+                print(f"예상 용량: {filesize_gb:.2f} GB")
+            else:
+                print(f"예상 용량: {filesize_mb:.1f} MB")
+        else:
+            print(f"예상 용량: 확인 불가")
+
+        # 조회수, 좋아요 등 추가 정보
+        view_count = info.get('view_count')
+        if view_count:
+            print(f"조회수: {view_count:,}")
+
+        like_count = info.get('like_count')
+        if like_count:
+            print(f"좋아요: {like_count:,}")
+
+        upload_date = info.get('upload_date')
+        if upload_date:
+            # YYYYMMDD → YYYY-MM-DD
+            formatted_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
+            print(f"업로드 날짜: {formatted_date}")
+
+        print("="*60 + "\n")
+
+        if status_callback:
+            status_callback("영상 정보 확인 완료")
 
     def download(self, url, progress_callback=None, status_callback=None):
         self.cancel_requested = False
@@ -80,38 +160,24 @@ class VideoDownloader:
         # 포맷 선택 로직 - 지정 화질의 최고 품질 다운로드
         format_str = self._build_format_selector(quality)
 
-        # 파일 크기 확인하여 최적 워커 수 계산
+        # 영상 정보 추출 및 출력
+        if status_callback:
+            status_callback("영상 정보 확인 중...")
+
         try:
-            if status_callback:
-                status_callback("영상 정보 확인 중...")
-
-            # 영상 정보 추출 (파일 크기 확인용)
-            info_opts = {
-                'format': format_str,
-                'quiet': True,
-                'no_warnings': True,
-            }
-            with yt_dlp.YoutubeDL(info_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-
-                # 파일 크기 추출 (bytes → MB)
-                filesize = info.get('filesize') or info.get('filesize_approx') or 0
-                filesize_mb = filesize / (1024 * 1024) if filesize > 0 else None
-
-                if filesize_mb:
-                    print(f"[Downloader] 예상 파일 크기: {filesize_mb:.1f}MB")
-                else:
-                    print(f"[Downloader] 파일 크기 확인 실패 - 기본값 사용")
+            info = self.get_video_info(url)
+            self._print_video_info(info, quality, output_format, status_callback)
         except Exception as e:
-            print(f"[Downloader] 파일 크기 확인 중 오류: {e}")
-            filesize_mb = None
+            print(f"[Downloader] 영상 정보 확인 실패: {e}")
+            if status_callback:
+                status_callback(f"영상 정보 확인 실패 (다운로드는 계속 진행)")
 
-        # 동적 워커 수 계산 (파일 크기 고려)
-        from .auto_config import AutoConfig
-        concurrent_fragments = AutoConfig.get_optimal_concurrent_fragments(filesize_mb)
+        # 병렬 다운로드 설정 (벤치마크로 결정된 값 사용)
+        concurrent_fragments = config.get("concurrent_fragments")
 
         speed_limit_mbps = config.get("speed_limit_mbps")
 
+        print(f"[Downloader] 병렬 다운로드: {concurrent_fragments}개 워커")
         print(f"[Downloader] 참고: 청크 크기, 버퍼 등은 yt-dlp가 자동으로 최적화합니다")
 
         # 속도 제한 계산 (Mbps -> bytes/s)
