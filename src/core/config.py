@@ -7,8 +7,7 @@ class Config:
         "download_path": str(Path.home() / "Downloads"),
         "ffmpeg_path": "",  # Empty means system path or bundled
         "default_quality": "Best", # Best, 2160p, 1440p, 1080p, 720p, 480p, 360p
-        "preferred_format": "mp4", # mp4, mkv, ts (선호 포맷)
-        "format_priority": "quality", # quality: 품질 우선, format: 포맷 우선
+        "output_format": "mp4", # mp4, mkv (최종 출력 포맷)
         "keep_original": False,
 
         # 성능 옵션

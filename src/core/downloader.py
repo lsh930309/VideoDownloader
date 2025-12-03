@@ -8,54 +8,23 @@ class VideoDownloader:
         self.cancel_requested = False
         self.ffmpeg_ensured = False
 
-    def _build_format_selector(self, quality, preferred_format, format_priority):
+    def _build_format_selector(self, quality):
         """
-        스마트 포맷 선택 로직
+        포맷 선택 로직 - 지정 화질의 최고 품질을 다운로드
 
         Args:
             quality: 화질 설정 (Best, 2160p, 1440p, 1080p, 720p, 480p, 360p)
-            preferred_format: 선호 포맷 (mp4, mkv, ts)
-            format_priority: 우선순위 (quality: 품질 우선, format: 포맷 우선)
 
         Returns:
             yt-dlp format selector 문자열
         """
-        # 포맷별 확장자 매핑
-        format_ext_map = {
-            'mp4': 'mp4',
-            'mkv': 'mkv',
-            'ts': 'ts'
-        }
-
-        preferred_ext = format_ext_map.get(preferred_format, 'mp4')
-
         if quality == "Best":
-            height_filter = ""
+            # 최고 화질 다운로드
+            format_str = "bestvideo+bestaudio/best"
         else:
+            # 지정 화질 이하의 최고 품질 다운로드
             height = quality.replace("p", "")
-            height_filter = f"[height<={height}]"
-
-        if format_priority == "quality":
-            # 품질 우선: 지정 화질을 최우선으로, 그 다음 선호 포맷
-            # 예: 1440p webm > 1440p mp4 > 1080p mp4
-            if quality == "Best":
-                format_str = f"bestvideo[ext={preferred_ext}]+bestaudio/bestvideo+bestaudio/best"
-            else:
-                # 1. 지정 화질의 최고 품질 (포맷 무관)
-                # 2. 더 낮은 화질 + 선호 포맷
-                # 3. 최선의 선택
-                format_str = f"bestvideo{height_filter}+bestaudio/bestvideo[ext={preferred_ext}]+bestaudio/best"
-        else:
-            # 포맷 우선: 선호 포맷을 최대한 유지 (품질이 낮아져도)
-            # 예: 1080p mp4 > 1440p webm
-            if quality == "Best":
-                format_str = f"bestvideo[ext={preferred_ext}]+bestaudio/bestvideo+bestaudio/best"
-            else:
-                # 1. 지정 화질 + 선호 포맷
-                # 2. 더 낮은 화질 + 선호 포맷
-                # 3. 지정 화질 + 다른 포맷
-                # 4. 최선의 선택
-                format_str = f"bestvideo{height_filter}[ext={preferred_ext}]+bestaudio/bestvideo[ext={preferred_ext}]+bestaudio/bestvideo{height_filter}+bestaudio/best"
+            format_str = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
 
         print(f"[Downloader] 포맷 선택자: {format_str}")
         return format_str
@@ -98,16 +67,18 @@ class VideoDownloader:
 
         output_path = config.get("download_path")
         quality = config.get("default_quality")
-        preferred_format = config.get("preferred_format") or config.get("default_format") or "mp4"
-        format_priority = config.get("format_priority") or "quality"
+        output_format = config.get("output_format") or config.get("preferred_format") or config.get("default_format") or "mp4"
+        # ts는 더 이상 지원하지 않으므로 mp4로 변환
+        if output_format == "ts":
+            output_format = "mp4"
         ffmpeg_path = config.get("ffmpeg_path")
 
         print(f"[Downloader] URL: {url}")
         print(f"[Downloader] 출력 경로: {output_path}")
-        print(f"[Downloader] 화질: {quality}, 선호 포맷: {preferred_format}, 우선순위: {format_priority}")
+        print(f"[Downloader] 화질: {quality}, 출력 포맷: {output_format}")
 
-        # 스마트 포맷 선택 로직
-        format_str = self._build_format_selector(quality, preferred_format, format_priority)
+        # 포맷 선택 로직 - 지정 화질의 최고 품질 다운로드
+        format_str = self._build_format_selector(quality)
 
         # 성능 설정 값 가져오기
         concurrent_fragments = config.get("concurrent_fragments")
@@ -127,7 +98,7 @@ class VideoDownloader:
         ydl_opts = {
             'format': format_str,
             'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-            'merge_output_format': preferred_format,
+            'merge_output_format': output_format,  # FFmpeg로 remux하여 출력 포맷 변환
             'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, status_callback)],
             'quiet': True,
             'no_warnings': True,

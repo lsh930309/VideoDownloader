@@ -79,11 +79,13 @@ class MainWindow(QMainWindow):
         options_layout.addWidget(self.quality_combo)
 
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["mp4", "mkv", "ts"])
-        # 하위 호환성: default_format이 있으면 preferred_format으로 사용
-        preferred_format = config.get("preferred_format") or config.get("default_format")
-        self.format_combo.setCurrentText(preferred_format)
-        options_layout.addWidget(QLabel("선호 포맷:"))
+        self.format_combo.addItems(["mp4", "mkv"])
+        # 하위 호환성: 이전 설정값들을 output_format으로 마이그레이션
+        output_format = config.get("output_format") or config.get("preferred_format") or config.get("default_format") or "mp4"
+        if output_format == "ts":
+            output_format = "mp4"
+        self.format_combo.setCurrentText(output_format)
+        options_layout.addWidget(QLabel("출력 포맷:"))
         options_layout.addWidget(self.format_combo)
 
         layout.addLayout(options_layout)
@@ -109,8 +111,10 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             # Refresh UI with new settings if needed
             self.quality_combo.setCurrentText(config.get("default_quality"))
-            preferred_format = config.get("preferred_format") or config.get("default_format")
-            self.format_combo.setCurrentText(preferred_format)
+            output_format = config.get("output_format") or config.get("preferred_format") or config.get("default_format") or "mp4"
+            if output_format == "ts":
+                output_format = "mp4"
+            self.format_combo.setCurrentText(output_format)
             self.log("설정이 업데이트되었습니다.")
 
     def log(self, message):
@@ -138,7 +142,7 @@ class MainWindow(QMainWindow):
         self.log(f"다운로드 시작: {url}")
 
         config.set("default_quality", self.quality_combo.currentText())
-        config.set("preferred_format", self.format_combo.currentText())
+        config.set("output_format", self.format_combo.currentText())
 
         try:
             loop = asyncio.get_event_loop()

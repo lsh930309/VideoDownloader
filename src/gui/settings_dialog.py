@@ -119,23 +119,19 @@ class SettingsDialog(QDialog):
         quality_layout.addRow("기본 화질:", self.quality_combo)
 
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["mp4", "mkv", "ts"])
-        # 하위 호환성: default_format이 있으면 preferred_format으로 사용
-        preferred_format = config.get("preferred_format") or config.get("default_format")
-        self.format_combo.setCurrentText(preferred_format)
-        quality_layout.addRow("선호 포맷:", self.format_combo)
+        self.format_combo.addItems(["mp4", "mkv"])
+        # 하위 호환성: 이전 설정값들을 output_format으로 마이그레이션
+        output_format = config.get("output_format") or config.get("preferred_format") or config.get("default_format") or "mp4"
+        # ts는 더 이상 지원하지 않으므로 mp4로 변환
+        if output_format == "ts":
+            output_format = "mp4"
+        self.format_combo.setCurrentText(output_format)
+        quality_layout.addRow("출력 포맷:", self.format_combo)
 
-        # 포맷/품질 우선순위 설정
-        self.priority_combo = QComboBox()
-        self.priority_combo.addItems(["품질 우선", "포맷 우선"])
-        priority_value = config.get("format_priority")
-        self.priority_combo.setCurrentText("품질 우선" if priority_value == "quality" else "포맷 우선")
-        quality_layout.addRow("우선순위:", self.priority_combo)
-
-        priority_note = QLabel("품질 우선: 선호 포맷이 없거나 품질이 낮으면 다른 포맷 선택\n포맷 우선: 선호 포맷을 최대한 유지 (품질이 낮아질 수 있음)")
-        priority_note.setStyleSheet("color: gray; font-size: 9px;")
-        priority_note.setWordWrap(True)
-        quality_layout.addRow("", priority_note)
+        format_note = QLabel("지정 화질의 최고 품질로 다운로드 후 선택한 포맷으로 변환합니다")
+        format_note.setStyleSheet("color: gray; font-size: 9px;")
+        format_note.setWordWrap(True)
+        quality_layout.addRow("", format_note)
 
         quality_group.setLayout(quality_layout)
         layout.addWidget(quality_group)
@@ -341,11 +337,7 @@ class SettingsDialog(QDialog):
         config.set("download_path", self.path_edit.text())
         config.set("ffmpeg_path", self.ffmpeg_edit.text())
         config.set("default_quality", self.quality_combo.currentText())
-        config.set("preferred_format", self.format_combo.currentText())
-
-        # 우선순위 설정 저장
-        priority_text = self.priority_combo.currentText()
-        config.set("format_priority", "quality" if priority_text == "품질 우선" else "format")
+        config.set("output_format", self.format_combo.currentText())
 
         # 성능 설정 저장
         config.set("concurrent_fragments", self.concurrent_spin.value())
