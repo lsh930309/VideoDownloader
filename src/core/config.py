@@ -11,10 +11,12 @@ class Config:
         "keep_original": False,
 
         # 성능 옵션
-        "concurrent_fragments": 16,  # 동시 다운로드 프래그먼트 수 (1-32, 기본 16)
-        "chunk_size_mb": 10,  # 청크 크기 (MB)
-        "buffer_size_mb": 16,  # 버퍼 크기 (MB) - 사용 안 함
+        "concurrent_fragments": 8,  # 동시 다운로드 프래그먼트 수 (자동 설정됨)
         "speed_limit_mbps": 0,  # 속도 제한 (0 = 무제한, Mbps)
+
+        # 아래 옵션들은 하위 호환성을 위해 유지하지만 yt-dlp 자동 최적화에 맡김
+        "chunk_size_mb": 10,  # (사용 안 함 - yt-dlp 자동 조절)
+        "buffer_size_mb": 16,  # (사용 안 함 - yt-dlp 자동 조절)
     }
 
     # %APPDATA%에 설정 파일 저장
@@ -35,6 +37,7 @@ class Config:
 
     def __init__(self):
         self.config = self.load_config()
+        self._apply_auto_settings_if_first_run()
 
     def load_config(self):
         if self.CONFIG_FILE.exists():
@@ -44,6 +47,21 @@ class Config:
             except Exception:
                 return self.DEFAULT_CONFIG
         return self.DEFAULT_CONFIG
+
+    def _apply_auto_settings_if_first_run(self):
+        """최초 실행 시 CPU 기반 자동 설정 적용"""
+        is_first_run = not self.CONFIG_FILE.exists()
+
+        if is_first_run:
+            try:
+                from .auto_config import AutoConfig
+                concurrent_fragments = AutoConfig.get_optimal_concurrent_fragments()
+
+                self.config["concurrent_fragments"] = concurrent_fragments
+                self.save_config()
+                print(f"[Config] 자동 설정 적용됨: concurrent_fragments={concurrent_fragments}")
+            except Exception as e:
+                print(f"[Config] 자동 설정 실패 (기본값 사용): {e}")
 
     def save_config(self):
         with open(self.CONFIG_FILE, "w", encoding="utf-8") as f:

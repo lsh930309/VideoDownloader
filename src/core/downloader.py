@@ -82,11 +82,10 @@ class VideoDownloader:
 
         # 성능 설정 값 가져오기
         concurrent_fragments = config.get("concurrent_fragments")
-        chunk_size_mb = config.get("chunk_size_mb")
-        buffer_size_mb = config.get("buffer_size_mb")
         speed_limit_mbps = config.get("speed_limit_mbps")
 
-        print(f"[Downloader] 성능 설정: {concurrent_fragments}개 동시 다운로드, 청크 {chunk_size_mb}MB, 버퍼 {buffer_size_mb}MB")
+        print(f"[Downloader] 성능 설정: {concurrent_fragments}개 병렬 다운로드")
+        print(f"[Downloader] 참고: 청크 크기, 버퍼 등은 yt-dlp가 자동으로 최적화합니다")
 
         # 속도 제한 계산 (Mbps -> bytes/s)
         rate_limit = None if speed_limit_mbps == 0 else int(speed_limit_mbps * 1024 * 1024 / 8)
@@ -103,14 +102,16 @@ class VideoDownloader:
             'quiet': True,
             'no_warnings': True,
 
-            # 성능 최적화 옵션 (설정 값 사용)
+            # 병렬 다운로드 설정 (CPU 기반 자동 설정)
             'concurrent_fragment_downloads': concurrent_fragments,
-            'http_chunk_size': chunk_size_mb * 1024 * 1024,
+
+            # 재시도 설정
             'retries': 10,
             'fragment_retries': 10,
-            # buffersize는 yt-dlp 자동 조절에 맡김 (속도 저하 방지)
 
-            # 네트워크 최적화
+            # 네트워크 최적화 (yt-dlp 자동 조절)
+            # - buffer_size: 자동 조절 (resize-buffer 기본 활성화)
+            # - http_chunk_size: 자동 조절 (기본 disabled, 필요시 자동 활성화)
             'socket_timeout': 30,
             'source_address': None,
             'prefer_insecure': False,

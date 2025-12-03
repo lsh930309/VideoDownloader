@@ -145,7 +145,7 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         # 다운로드 성능 설정
-        download_group = QGroupBox("다운로드 성능")
+        download_group = QGroupBox("병렬 다운로드 설정")
         download_layout = QFormLayout()
 
         # 동시 프래그먼트 수
@@ -153,24 +153,13 @@ class SettingsDialog(QDialog):
         self.concurrent_spin.setRange(1, 16)
         self.concurrent_spin.setValue(config.get("concurrent_fragments"))
         self.concurrent_spin.setSuffix(" 개")
-        concurrent_label = QLabel("동시 다운로드 조각 수 (높을수록 빠름)")
+        concurrent_label = QLabel("동시 다운로드 조각 수")
         download_layout.addRow(concurrent_label, self.concurrent_spin)
 
-        # 청크 크기
-        self.chunk_spin = QSpinBox()
-        self.chunk_spin.setRange(1, 50)
-        self.chunk_spin.setValue(config.get("chunk_size_mb"))
-        self.chunk_spin.setSuffix(" MB")
-        chunk_label = QLabel("청크 크기")
-        download_layout.addRow(chunk_label, self.chunk_spin)
-
-        # 버퍼 크기
-        self.buffer_spin = QSpinBox()
-        self.buffer_spin.setRange(4, 64)
-        self.buffer_spin.setValue(config.get("buffer_size_mb"))
-        self.buffer_spin.setSuffix(" MB")
-        buffer_label = QLabel("버퍼 크기")
-        download_layout.addRow(buffer_label, self.buffer_spin)
+        perf_note = QLabel("※ 청크 크기, 버퍼 등의 네트워크 최적화는 yt-dlp가 자동으로 처리합니다")
+        perf_note.setStyleSheet("color: gray; font-size: 9px;")
+        perf_note.setWordWrap(True)
+        download_layout.addRow("", perf_note)
 
         download_group.setLayout(download_layout)
         layout.addWidget(download_group)
@@ -190,52 +179,47 @@ class SettingsDialog(QDialog):
         speed_group.setLayout(speed_layout)
         layout.addWidget(speed_group)
 
-        # 성능 프리셋
-        preset_group = QGroupBox("빠른 설정")
-        preset_layout = QVBoxLayout()
+        # 자동 최적화 버튼
+        auto_group = QGroupBox("자동 최적화")
+        auto_layout = QVBoxLayout()
 
-        preset_note = QLabel("아래 버튼을 클릭하면 권장 설정이 자동으로 적용됩니다")
-        preset_note.setStyleSheet("color: gray; font-size: 10px;")
-        preset_layout.addWidget(preset_note)
+        auto_note = QLabel("시스템 환경(CPU, 메모리)을 분석하여 최적의 설정을 자동으로 적용합니다")
+        auto_note.setStyleSheet("color: gray; font-size: 10px;")
+        auto_note.setWordWrap(True)
+        auto_layout.addWidget(auto_note)
 
-        preset_buttons = QHBoxLayout()
+        auto_btn = QPushButton("자동 설정 적용")
+        auto_btn.clicked.connect(self.apply_auto_settings)
+        auto_layout.addWidget(auto_btn)
 
-        fast_btn = QPushButton("빠른 속도 (권장)")
-        fast_btn.clicked.connect(lambda: self.apply_preset("fast"))
-        preset_buttons.addWidget(fast_btn)
-
-        balanced_btn = QPushButton("균형 (기본)")
-        balanced_btn.clicked.connect(lambda: self.apply_preset("balanced"))
-        preset_buttons.addWidget(balanced_btn)
-
-        safe_btn = QPushButton("안정적")
-        safe_btn.clicked.connect(lambda: self.apply_preset("safe"))
-        preset_buttons.addWidget(safe_btn)
-
-        preset_layout.addLayout(preset_buttons)
-        preset_group.setLayout(preset_layout)
-        layout.addWidget(preset_group)
+        auto_group.setLayout(auto_layout)
+        layout.addWidget(auto_group)
 
         layout.addStretch()
         return widget
 
-    def apply_preset(self, preset):
-        """성능 프리셋 적용"""
-        if preset == "fast":
-            self.concurrent_spin.setValue(16)
-            self.chunk_spin.setValue(20)
-            self.buffer_spin.setValue(32)
-            self.speed_spin.setValue(0)
-        elif preset == "balanced":
-            self.concurrent_spin.setValue(8)
-            self.chunk_spin.setValue(10)
-            self.buffer_spin.setValue(16)
-            self.speed_spin.setValue(0)
-        elif preset == "safe":
-            self.concurrent_spin.setValue(4)
-            self.chunk_spin.setValue(5)
-            self.buffer_spin.setValue(8)
-            self.speed_spin.setValue(0)
+    def apply_auto_settings(self):
+        """시스템 환경 기반 자동 설정 적용"""
+        from src.core.auto_config import AutoConfig
+
+        try:
+            concurrent_fragments = AutoConfig.get_optimal_concurrent_fragments()
+            self.concurrent_spin.setValue(concurrent_fragments)
+
+            QMessageBox.information(
+                self,
+                "자동 설정 완료",
+                f"CPU 코어 수에 맞는 최적 설정이 적용되었습니다.\n\n"
+                f"병렬 다운로드 수: {concurrent_fragments}개\n\n"
+                f"※ 청크 크기, 버퍼 등의 네트워크 최적화는\n"
+                f"   yt-dlp가 자동으로 처리합니다"
+            )
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "자동 설정 실패",
+                f"자동 설정 중 오류가 발생했습니다:\n{e}"
+            )
 
     def browse_path(self):
         path = QFileDialog.getExistingDirectory(self, "다운로드 경로 선택")
@@ -341,8 +325,7 @@ class SettingsDialog(QDialog):
 
         # 성능 설정 저장
         config.set("concurrent_fragments", self.concurrent_spin.value())
-        config.set("chunk_size_mb", self.chunk_spin.value())
-        config.set("buffer_size_mb", self.buffer_spin.value())
         config.set("speed_limit_mbps", self.speed_spin.value())
+        # chunk_size_mb, buffer_size_mb는 yt-dlp 자동 최적화에 맡기므로 저장하지 않음
 
         self.accept()
