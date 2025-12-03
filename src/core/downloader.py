@@ -8,6 +8,58 @@ class VideoDownloader:
         self.cancel_requested = False
         self.ffmpeg_ensured = False
 
+    def _build_format_selector(self, quality, preferred_format, format_priority):
+        """
+        스마트 포맷 선택 로직
+
+        Args:
+            quality: 화질 설정 (Best, 2160p, 1440p, 1080p, 720p, 480p, 360p)
+            preferred_format: 선호 포맷 (mp4, mkv, ts)
+            format_priority: 우선순위 (quality: 품질 우선, format: 포맷 우선)
+
+        Returns:
+            yt-dlp format selector 문자열
+        """
+        # 포맷별 확장자 매핑
+        format_ext_map = {
+            'mp4': 'mp4',
+            'mkv': 'mkv',
+            'ts': 'ts'
+        }
+
+        preferred_ext = format_ext_map.get(preferred_format, 'mp4')
+
+        if quality == "Best":
+            height_filter = ""
+        else:
+            height = quality.replace("p", "")
+            height_filter = f"[height<={height}]"
+
+        if format_priority == "quality":
+            # 품질 우선: 지정 화질을 최우선으로, 그 다음 선호 포맷
+            # 예: 1440p webm > 1440p mp4 > 1080p mp4
+            if quality == "Best":
+                format_str = f"bestvideo[ext={preferred_ext}]+bestaudio/bestvideo+bestaudio/best"
+            else:
+                # 1. 지정 화질의 최고 품질 (포맷 무관)
+                # 2. 더 낮은 화질 + 선호 포맷
+                # 3. 최선의 선택
+                format_str = f"bestvideo{height_filter}+bestaudio/bestvideo[ext={preferred_ext}]+bestaudio/best"
+        else:
+            # 포맷 우선: 선호 포맷을 최대한 유지 (품질이 낮아져도)
+            # 예: 1080p mp4 > 1440p webm
+            if quality == "Best":
+                format_str = f"bestvideo[ext={preferred_ext}]+bestaudio/bestvideo+bestaudio/best"
+            else:
+                # 1. 지정 화질 + 선호 포맷
+                # 2. 더 낮은 화질 + 선호 포맷
+                # 3. 지정 화질 + 다른 포맷
+                # 4. 최선의 선택
+                format_str = f"bestvideo{height_filter}[ext={preferred_ext}]+bestaudio/bestvideo[ext={preferred_ext}]+bestaudio/bestvideo{height_filter}+bestaudio/best"
+
+        print(f"[Downloader] 포맷 선택자: {format_str}")
+        return format_str
+
     def get_video_info(self, url):
         ydl_opts = {
             'quiet': True,
@@ -46,22 +98,16 @@ class VideoDownloader:
 
         output_path = config.get("download_path")
         quality = config.get("default_quality")
-        video_format = config.get("default_format")
+        preferred_format = config.get("preferred_format") or config.get("default_format") or "mp4"
+        format_priority = config.get("format_priority") or "quality"
         ffmpeg_path = config.get("ffmpeg_path")
 
         print(f"[Downloader] URL: {url}")
         print(f"[Downloader] 출력 경로: {output_path}")
-        print(f"[Downloader] 화질: {quality}, 포맷: {video_format}")
+        print(f"[Downloader] 화질: {quality}, 선호 포맷: {preferred_format}, 우선순위: {format_priority}")
 
-        # Format selection logic
-        if quality == "Best":
-            # 최고 화질: VP9 > AVC1 순서로 선호, 오디오는 최고 품질
-            format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
-        else:
-            # Map quality string (e.g., "1080p") to height
-            height = quality.replace("p", "")
-            # 지정 화질 이하로 제한, mp4 코덱 선호
-            format_str = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+        # 스마트 포맷 선택 로직
+        format_str = self._build_format_selector(quality, preferred_format, format_priority)
 
         # 성능 설정 값 가져오기
         concurrent_fragments = config.get("concurrent_fragments")
@@ -81,7 +127,7 @@ class VideoDownloader:
         ydl_opts = {
             'format': format_str,
             'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-            'merge_output_format': video_format,
+            'merge_output_format': preferred_format,
             'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, status_callback)],
             'quiet': True,
             'no_warnings': True,
@@ -92,12 +138,6 @@ class VideoDownloader:
             'retries': 10,
             'fragment_retries': 10,
             # buffersize는 yt-dlp 자동 조절에 맡김 (속도 저하 방지)
-
-            # 치지직/라이브 영상 재생 호환성 해결 (FFmpeg Remux)
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': video_format,
-            }],
 
             # 네트워크 최적화
             'socket_timeout': 30,
