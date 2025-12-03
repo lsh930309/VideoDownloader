@@ -23,6 +23,25 @@ class FFmpegInstallThread(QThread):
             self.error.emit(str(e))
 
 
+class BenchmarkThread(QThread):
+    """네트워크 벤치마크를 백그라운드에서 수행하는 스레드"""
+    progress = pyqtSignal(int)
+    status = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from src.core.network_benchmark import NetworkBenchmark
+            result = NetworkBenchmark.run_benchmark(
+                progress_callback=lambda p: self.progress.emit(p),
+                status_callback=lambda s: self.status.emit(s)
+            )
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -183,14 +202,36 @@ class SettingsDialog(QDialog):
         auto_group = QGroupBox("자동 최적화")
         auto_layout = QVBoxLayout()
 
-        auto_note = QLabel("시스템 환경(CPU, 메모리)을 분석하여 최적의 설정을 자동으로 적용합니다")
+        auto_note = QLabel("시스템 환경(CPU)을 기반으로 간단히 설정하거나, 네트워크 벤치마크로 정밀 측정할 수 있습니다")
         auto_note.setStyleSheet("color: gray; font-size: 10px;")
         auto_note.setWordWrap(True)
         auto_layout.addWidget(auto_note)
 
-        auto_btn = QPushButton("자동 설정 적용")
+        auto_buttons = QHBoxLayout()
+
+        auto_btn = QPushButton("간단 자동 설정")
         auto_btn.clicked.connect(self.apply_auto_settings)
-        auto_layout.addWidget(auto_btn)
+        auto_buttons.addWidget(auto_btn)
+
+        benchmark_btn = QPushButton("네트워크 벤치마크")
+        benchmark_btn.clicked.connect(self.run_benchmark)
+        auto_buttons.addWidget(benchmark_btn)
+
+        auto_layout.addLayout(auto_buttons)
+
+        # 벤치마크 상태 표시
+        benchmark_completed = config.get("benchmark_completed")
+        if benchmark_completed:
+            optimal_workers = config.get("benchmark_optimal_workers")
+            min_size = config.get("benchmark_min_size_per_worker")
+            benchmark_status = QLabel(f"✓ 벤치마크 완료 (최적 워커: {optimal_workers}개, 워커당 최소: {min_size}MB)")
+            benchmark_status.setStyleSheet("color: green; font-size: 9px;")
+        else:
+            benchmark_status = QLabel("벤치마크 미실행 - CPU 기반 기본값 사용 중")
+            benchmark_status.setStyleSheet("color: gray; font-size: 9px;")
+
+        benchmark_status.setWordWrap(True)
+        auto_layout.addWidget(benchmark_status)
 
         auto_group.setLayout(auto_layout)
         layout.addWidget(auto_group)
@@ -220,6 +261,118 @@ class SettingsDialog(QDialog):
                 "자동 설정 실패",
                 f"자동 설정 중 오류가 발생했습니다:\n{e}"
             )
+
+    def run_benchmark(self):
+        """네트워크 벤치마크 실행"""
+        import os
+        cpu_count = os.cpu_count() or 4
+
+        # 테스트 횟수 계산 (1, 2, 4, 8, 16, ... CPU 코어 수까지)
+        test_count = 0
+        workers = 1
+        while workers <= cpu_count:
+            test_count += 1
+            workers *= 2
+
+        # 예상 데이터 사용량 (A/B 테스트: 각각 824MB)
+        # A 영상: 824MB * test_count
+        # B 영상: 824MB * test_count (부분 다운로드)
+        estimated_data_mb = 824 * test_count * 2  # A/B 테스트
+        estimated_data_gb = estimated_data_mb / 1024
+
+        # 확인 대화상자
+        reply = QMessageBox.question(
+            self,
+            "네트워크 벤치마크",
+            f"A/B 테스트 벤치마크를 실행하면 작은 파일과 큰 파일로\n"
+            f"각각 테스트하여 최적의 병렬 다운로드 설정을 찾습니다.\n\n"
+            f"테스트: A 영상(작은 파일) + B 영상(큰 파일 부분)\n"
+            f"워커 범위: 1~{cpu_count}개 (총 {test_count}가지 설정)\n"
+            f"예상 소요 시간: 10-20분\n"
+            f"예상 데이터 사용량: 약 {estimated_data_gb:.1f}GB\n\n"
+            f"벤치마크를 실행하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # 진행 대화상자 생성
+        self.benchmark_dialog = QProgressDialog("벤치마크 초기화 중...", "취소", 0, 100, self)
+        self.benchmark_dialog.setWindowTitle("네트워크 벤치마크")
+        self.benchmark_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.benchmark_dialog.setAutoClose(False)
+        self.benchmark_dialog.setAutoReset(False)
+        self.benchmark_dialog.canceled.connect(self.cancel_benchmark)
+
+        # 벤치마크 스레드 시작
+        self.benchmark_thread = BenchmarkThread()
+        self.benchmark_thread.progress.connect(self.update_benchmark_progress)
+        self.benchmark_thread.status.connect(self.update_benchmark_status)
+        self.benchmark_thread.finished.connect(self.benchmark_finished)
+        self.benchmark_thread.error.connect(self.benchmark_error)
+        self.benchmark_thread.start()
+
+        self.benchmark_dialog.show()
+
+    def cancel_benchmark(self):
+        """벤치마크 취소"""
+        if hasattr(self, 'benchmark_thread') and self.benchmark_thread.isRunning():
+            self.benchmark_thread.terminate()
+            self.benchmark_thread.wait()
+
+    def update_benchmark_progress(self, percent):
+        """벤치마크 진행률 업데이트"""
+        if hasattr(self, 'benchmark_dialog'):
+            self.benchmark_dialog.setValue(percent)
+
+    def update_benchmark_status(self, status):
+        """벤치마크 상태 메시지 업데이트"""
+        if hasattr(self, 'benchmark_dialog'):
+            self.benchmark_dialog.setLabelText(status)
+
+    def benchmark_finished(self, result):
+        """벤치마크 완료"""
+        if hasattr(self, 'benchmark_dialog'):
+            self.benchmark_dialog.close()
+
+        # 결과 저장
+        optimal_workers = result['optimal_workers']
+        min_size_per_worker = result['min_size_per_worker']
+        best_speed = result['best_speed_mbps']
+        avg_speed_mb_per_sec = result.get('avg_download_speed_mb_per_sec', best_speed / 8)
+
+        config.set("benchmark_completed", True)
+        config.set("benchmark_optimal_workers", optimal_workers)
+        config.set("benchmark_min_size_per_worker", min_size_per_worker)
+
+        # UI 업데이트
+        self.concurrent_spin.setValue(optimal_workers)
+
+        # 결과 표시
+        QMessageBox.information(
+            self,
+            "A/B 벤치마크 완료",
+            f"A/B 테스트 벤치마크가 완료되었습니다!\n\n"
+            f"최고 속도: {best_speed:.1f} Mbps ({avg_speed_mb_per_sec:.1f} MB/s)\n"
+            f"최적 워커 수: {optimal_workers}개 (자원 효율 고려)\n"
+            f"워커당 최소 크기: {min_size_per_worker}MB (I/O 병목 방지)\n\n"
+            f"※ 10% 이내 성능 차이 시 더 적은 워커 선택\n"
+            f"※ 파일 크기에 따라 워커 수가 동적으로 조정됩니다\n\n"
+            f"이 설정이 자동으로 적용되었습니다."
+        )
+
+    def benchmark_error(self, error_msg):
+        """벤치마크 실패"""
+        if hasattr(self, 'benchmark_dialog'):
+            self.benchmark_dialog.close()
+
+        QMessageBox.critical(
+            self,
+            "벤치마크 실패",
+            f"벤치마크 중 오류가 발생했습니다:\n\n{error_msg}\n\n"
+            f"네트워크 연결을 확인하거나 나중에 다시 시도해주세요."
+        )
 
     def browse_path(self):
         path = QFileDialog.getExistingDirectory(self, "다운로드 경로 선택")

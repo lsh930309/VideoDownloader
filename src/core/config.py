@@ -14,6 +14,11 @@ class Config:
         "concurrent_fragments": 8,  # 동시 다운로드 프래그먼트 수 (자동 설정됨)
         "speed_limit_mbps": 0,  # 속도 제한 (0 = 무제한, Mbps)
 
+        # 네트워크 벤치마크 결과
+        "benchmark_completed": False,  # 벤치마크 완료 여부
+        "benchmark_optimal_workers": None,  # 벤치마크로 찾은 최적 워커 수
+        "benchmark_min_size_per_worker": 100,  # 벤치마크로 찾은 워커당 최소 크기 (MB)
+
         # 아래 옵션들은 하위 호환성을 위해 유지하지만 yt-dlp 자동 최적화에 맡김
         "chunk_size_mb": 10,  # (사용 안 함 - yt-dlp 자동 조절)
         "buffer_size_mb": 16,  # (사용 안 함 - yt-dlp 자동 조절)

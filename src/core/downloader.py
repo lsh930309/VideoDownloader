@@ -80,11 +80,38 @@ class VideoDownloader:
         # 포맷 선택 로직 - 지정 화질의 최고 품질 다운로드
         format_str = self._build_format_selector(quality)
 
-        # 성능 설정 값 가져오기
-        concurrent_fragments = config.get("concurrent_fragments")
+        # 파일 크기 확인하여 최적 워커 수 계산
+        try:
+            if status_callback:
+                status_callback("영상 정보 확인 중...")
+
+            # 영상 정보 추출 (파일 크기 확인용)
+            info_opts = {
+                'format': format_str,
+                'quiet': True,
+                'no_warnings': True,
+            }
+            with yt_dlp.YoutubeDL(info_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+                # 파일 크기 추출 (bytes → MB)
+                filesize = info.get('filesize') or info.get('filesize_approx') or 0
+                filesize_mb = filesize / (1024 * 1024) if filesize > 0 else None
+
+                if filesize_mb:
+                    print(f"[Downloader] 예상 파일 크기: {filesize_mb:.1f}MB")
+                else:
+                    print(f"[Downloader] 파일 크기 확인 실패 - 기본값 사용")
+        except Exception as e:
+            print(f"[Downloader] 파일 크기 확인 중 오류: {e}")
+            filesize_mb = None
+
+        # 동적 워커 수 계산 (파일 크기 고려)
+        from .auto_config import AutoConfig
+        concurrent_fragments = AutoConfig.get_optimal_concurrent_fragments(filesize_mb)
+
         speed_limit_mbps = config.get("speed_limit_mbps")
 
-        print(f"[Downloader] 성능 설정: {concurrent_fragments}개 병렬 다운로드")
         print(f"[Downloader] 참고: 청크 크기, 버퍼 등은 yt-dlp가 자동으로 최적화합니다")
 
         # 속도 제한 계산 (Mbps -> bytes/s)
