@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QFileDialog, QComboBox,
                              QCheckBox, QSpinBox, QTabWidget, QWidget, QGroupBox,
-                             QFormLayout, QMessageBox, QProgressDialog)
+                             QFormLayout, QMessageBox, QProgressDialog, QTextBrowser)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from src.core.config import config
 from src.core.ffmpeg_installer import FFmpegInstaller
+from src.core.ytdlp_plugin_installer import YtDlpPluginInstaller
 
 
 class FFmpegInstallThread(QThread):
@@ -38,6 +39,22 @@ class BenchmarkThread(QThread):
                 status_callback=lambda s: self.status.emit(s)
             )
             self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class PluginInstallThread(QThread):
+    """yt-dlp 플러그인 설치를 백그라운드에서 수행하는 스레드"""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(bool)
+    error = pyqtSignal(str)
+
+    def run(self):
+        try:
+            success = YtDlpPluginInstaller.install_plugin(
+                progress_callback=lambda p: self.progress.emit(p)
+            )
+            self.finished.emit(success)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -193,6 +210,26 @@ class SettingsDialog(QDialog):
         file_note.setStyleSheet("color: gray; font-size: 9px;")
         file_note.setWordWrap(True)
         cookie_layout.addRow("", file_note)
+
+        # Chrome 쿠키 잠금 문제 해결 버튼
+        chrome_fix_layout = QHBoxLayout()
+        self.install_plugin_btn = QPushButton("Chrome 쿠키 플러그인 설치")
+        self.install_plugin_btn.clicked.connect(self.install_ytdlp_plugin)
+        self.install_plugin_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        chrome_fix_layout.addWidget(self.install_plugin_btn)
+
+        self.plugin_help_btn = QPushButton("?")
+        self.plugin_help_btn.setFixedWidth(30)
+        self.plugin_help_btn.clicked.connect(self.show_plugin_help)
+        chrome_fix_layout.addWidget(self.plugin_help_btn)
+        chrome_fix_layout.addStretch()
+
+        cookie_layout.addRow("Chrome 114+ 문제 해결:", chrome_fix_layout)
+
+        plugin_note = QLabel("Chrome이 실행 중일 때 쿠키를 가져오지 못한다면 플러그인을 설치하세요")
+        plugin_note.setStyleSheet("color: #FF5722; font-size: 9px; font-weight: bold;")
+        plugin_note.setWordWrap(True)
+        cookie_layout.addRow("", plugin_note)
 
         cookie_group.setLayout(cookie_layout)
         layout.addWidget(cookie_group)
@@ -445,6 +482,122 @@ class SettingsDialog(QDialog):
         self.browser_combo.setEnabled(checked)
         self.cookies_file_edit.setEnabled(checked)
         self.cookies_file_btn.setEnabled(checked)
+
+    def show_plugin_help(self):
+        """Chrome 쿠키 플러그인 도움말 표시"""
+        help_text = """
+<h3>Chrome 쿠키 잠금 문제란?</h3>
+<p>Chrome 114 이상 버전에서는 보안 기능으로 인해 Chrome이 <b>실행 중일 때</b> 쿠키 파일에 접근할 수 없습니다.</p>
+
+<h3>증상</h3>
+<ul>
+<li>Chrome에서 쿠키를 가져오지 못하는 에러 발생</li>
+<li>PermissionError: [Errno 13] Permission denied</li>
+</ul>
+
+<h3>해결 방법</h3>
+<p><b>방법 1: 플러그인 설치 (권장)</b></p>
+<ul>
+<li>"Chrome 쿠키 플러그인 설치" 버튼 클릭</li>
+<li>yt-dlp-ChromeCookieUnlock 플러그인이 자동으로 설치됩니다</li>
+<li>Chrome을 닫지 않고도 쿠키를 가져올 수 있습니다</li>
+</ul>
+
+<p><b>방법 2: Chrome 종료 후 사용</b></p>
+<ul>
+<li>다운로드 전에 Chrome을 완전히 종료</li>
+<li>백그라운드 프로세스도 모두 종료 확인</li>
+</ul>
+
+<p><b>방법 3: Firefox 사용</b></p>
+<ul>
+<li>브라우저를 Firefox로 변경</li>
+<li>Firefox는 쿠키 잠금 문제가 없습니다</li>
+</ul>
+
+<h3>참고</h3>
+<p>이 문제는 Chrome의 의도적인 보안 기능으로, yt-dlp와 무관한 Chrome 측 변경사항입니다.</p>
+<p>더 자세한 정보: <a href="https://github.com/yt-dlp/yt-dlp/issues/7271">GitHub 이슈 #7271</a></p>
+"""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Chrome 쿠키 플러그인 도움말")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(help_text)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.exec()
+
+    def install_ytdlp_plugin(self):
+        """yt-dlp Chrome 쿠키 플러그인 설치"""
+        # 이미 설치되어 있는지 확인
+        if YtDlpPluginInstaller.check_plugin_installed():
+            QMessageBox.information(
+                self,
+                "플러그인 확인",
+                f"{YtDlpPluginInstaller.PLUGIN_NAME} 플러그인이 이미 설치되어 있습니다.\n\n"
+                "Chrome이 실행 중일 때도 쿠키를 가져올 수 있습니다."
+            )
+            return
+
+        # 설치 확인
+        reply = QMessageBox.question(
+            self,
+            "플러그인 설치",
+            f"{YtDlpPluginInstaller.PLUGIN_NAME} 플러그인을 설치하시겠습니까?\n\n"
+            "이 플러그인은 Chrome이 실행 중일 때도 쿠키를 가져올 수 있게 해줍니다.\n"
+            "설치에는 인터넷 연결이 필요하며 몇 초가 소요됩니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # 진행 대화상자
+        progress = QProgressDialog("플러그인 설치 중...", "취소", 0, 100, self)
+        progress.setWindowTitle("yt-dlp 플러그인 설치")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)  # 취소 버튼 비활성화
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        # 설치 스레드 생성 및 시작
+        self.plugin_thread = PluginInstallThread()
+        self.plugin_thread.progress.connect(progress.setValue)
+        self.plugin_thread.finished.connect(
+            lambda success: self.on_plugin_install_finished(success, progress)
+        )
+        self.plugin_thread.error.connect(
+            lambda error: self.on_plugin_install_error(error, progress)
+        )
+        self.plugin_thread.start()
+
+    def on_plugin_install_finished(self, success, progress):
+        """플러그인 설치 완료 콜백"""
+        progress.close()
+
+        if success:
+            QMessageBox.information(
+                self,
+                "설치 완료",
+                f"{YtDlpPluginInstaller.PLUGIN_NAME} 플러그인이 성공적으로 설치되었습니다.\n\n"
+                "이제 Chrome이 실행 중일 때도 쿠키를 가져올 수 있습니다."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "설치 실패",
+                f"플러그인 설치에 실패했습니다.\n\n"
+                "인터넷 연결을 확인하거나 수동으로 다음 명령을 실행해보세요:\n"
+                f"pip install {YtDlpPluginInstaller.PLUGIN_PACKAGE}"
+            )
+
+    def on_plugin_install_error(self, error_msg, progress):
+        """플러그인 설치 오류 콜백"""
+        progress.close()
+        QMessageBox.critical(
+            self,
+            "설치 오류",
+            f"플러그인 설치 중 오류가 발생했습니다:\n\n{error_msg}"
+        )
 
     def check_ffmpeg(self):
         """FFmpeg 설치 여부 확인"""
