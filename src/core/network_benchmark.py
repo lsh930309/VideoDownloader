@@ -8,6 +8,7 @@ import tempfile
 import os
 from pathlib import Path
 import yt_dlp
+from .config import Config
 
 
 class NetworkBenchmark:
@@ -264,6 +265,13 @@ class NetworkBenchmark:
                     raise yt_dlp.utils.DownloadError(f"부분 다운로드 완료: {downloaded_mb:.1f}MB")
 
         try:
+            # yt-dlp 작업 디렉토리를 %APPDATA%로 제한 (권한 문제 방지)
+            yt_dlp_cache_dir = Config.get_config_dir() / "yt-dlp-cache"
+            yt_dlp_cache_dir.mkdir(parents=True, exist_ok=True)
+
+            yt_dlp_temp_dir = Config.get_config_dir() / "temp"
+            yt_dlp_temp_dir.mkdir(parents=True, exist_ok=True)
+
             ydl_opts = {
                 'format': 'bestvideo+bestaudio/best',  # 최대 품질 다운로드
                 'outtmpl': os.path.join(temp_dir, 'benchmark_test.%(ext)s'),
@@ -274,6 +282,11 @@ class NetworkBenchmark:
                 'retries': 3,
                 'fragment_retries': 3,
                 'progress_hooks': [progress_hook],
+
+                # 캐시 및 임시 파일 경로를 %APPDATA%로 제한 (권한 문제 방지)
+                'cachedir': str(yt_dlp_cache_dir),
+                'paths': {'temp': str(yt_dlp_temp_dir)},
+                'socket_timeout': 30,
             }
 
             start_time = time.time()

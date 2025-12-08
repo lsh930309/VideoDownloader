@@ -1,12 +1,19 @@
 import yt_dlp
 import os
-from .config import config
+from .config import config, Config
 from .ffmpeg_installer import FFmpegInstaller
 
 class VideoDownloader:
     def __init__(self):
         self.cancel_requested = False
         self.ffmpeg_ensured = False
+
+        # yt-dlp 작업 디렉토리를 %APPDATA%로 제한
+        self.yt_dlp_cache_dir = Config.get_config_dir() / "yt-dlp-cache"
+        self.yt_dlp_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        self.yt_dlp_temp_dir = Config.get_config_dir() / "temp"
+        self.yt_dlp_temp_dir.mkdir(parents=True, exist_ok=True)
 
     def _build_format_selector(self, quality):
         """
@@ -30,16 +37,31 @@ class VideoDownloader:
         return format_str
 
     def get_video_info(self, url):
+        """
+        영상 정보 추출
+        모든 작업을 %APPDATA%/VideoDownloader 내부로 제한하여 권한 문제 방지
+        """
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,  # Full extraction for detailed info
+
+            # 캐시 및 임시 파일 경로를 %APPDATA%로 제한
+            'cachedir': str(self.yt_dlp_cache_dir),
+            'paths': {'temp': str(self.yt_dlp_temp_dir)},
+
+            # 네트워크 타임아웃 설정
+            'socket_timeout': 30,
         }
         try:
+            print(f"[Downloader] 영상 정보 추출 시작...")
+            print(f"[Downloader] 캐시 디렉토리: {self.yt_dlp_cache_dir}")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+                print(f"[Downloader] 영상 정보 추출 완료")
                 return info
         except Exception as e:
+            print(f"[ERROR] 영상 정보 추출 실패: {e}")
             raise e
 
     def _print_video_info(self, info, quality, output_format, status_callback=None):
@@ -195,6 +217,10 @@ class VideoDownloader:
             'quiet': True,
             'no_warnings': True,
 
+            # 캐시 및 임시 파일 경로를 %APPDATA%로 제한 (권한 문제 방지)
+            'cachedir': str(self.yt_dlp_cache_dir),
+            'paths': {'temp': str(self.yt_dlp_temp_dir)},
+
             # 병렬 다운로드 설정 (CPU 기반 자동 설정)
             'concurrent_fragment_downloads': concurrent_fragments,
 
@@ -216,6 +242,8 @@ class VideoDownloader:
 
         if ffmpeg_path:
             ydl_opts['ffmpeg_location'] = ffmpeg_path
+
+        print(f"[Downloader] yt-dlp 임시 파일 디렉토리: {self.yt_dlp_temp_dir}")
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
