@@ -545,40 +545,48 @@ class SettingsDialog(QDialog):
             f"{YtDlpPluginInstaller.PLUGIN_NAME} 플러그인을 설치하시겠습니까?\n\n"
             "이 플러그인은 Chrome이 실행 중일 때도 쿠키를 가져올 수 있게 해줍니다.\n"
             "설치에는 인터넷 연결이 필요하며 몇 초가 소요됩니다.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
         )
 
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # 진행 대화상자
-        progress = QProgressDialog("플러그인 설치 중...", "취소", 0, 100, self)
-        progress.setWindowTitle("yt-dlp 플러그인 설치")
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setCancelButton(None)  # 취소 버튼 비활성화
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        # 진행 대화상자 생성
+        self.plugin_progress = QProgressDialog("플러그인 설치 중...", None, 0, 100, self)
+        self.plugin_progress.setWindowTitle("yt-dlp 플러그인 설치")
+        self.plugin_progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self.plugin_progress.setCancelButton(None)  # 취소 버튼 제거
+        self.plugin_progress.setAutoClose(False)
+        self.plugin_progress.setAutoReset(False)
+        self.plugin_progress.setMinimumDuration(0)
+        self.plugin_progress.setValue(0)
+        self.plugin_progress.show()
 
         # 설치 스레드 생성 및 시작
         self.plugin_thread = PluginInstallThread()
-        self.plugin_thread.progress.connect(progress.setValue)
-        self.plugin_thread.finished.connect(
-            lambda success: self.on_plugin_install_finished(success, progress)
-        )
-        self.plugin_thread.error.connect(
-            lambda error: self.on_plugin_install_error(error, progress)
-        )
+        self.plugin_thread.progress.connect(self.on_plugin_progress)
+        self.plugin_thread.finished.connect(self.on_plugin_install_finished)
+        self.plugin_thread.error.connect(self.on_plugin_install_error)
         self.plugin_thread.start()
 
-    def on_plugin_install_finished(self, success, progress):
+    def on_plugin_progress(self, percent):
+        """플러그인 설치 진행률 업데이트"""
+        if hasattr(self, 'plugin_progress') and self.plugin_progress:
+            self.plugin_progress.setValue(percent)
+
+    def on_plugin_install_finished(self, success):
         """플러그인 설치 완료 콜백"""
-        progress.close()
+        if hasattr(self, 'plugin_progress') and self.plugin_progress:
+            self.plugin_progress.close()
+            self.plugin_progress = None
 
         if success:
             QMessageBox.information(
                 self,
                 "설치 완료",
                 f"{YtDlpPluginInstaller.PLUGIN_NAME} 플러그인이 성공적으로 설치되었습니다.\n\n"
+                f"설치 경로: {YtDlpPluginInstaller.get_plugin_dir() / 'yt_dlp_plugins'}\n\n"
                 "이제 Chrome이 실행 중일 때도 쿠키를 가져올 수 있습니다."
             )
         else:
@@ -586,17 +594,25 @@ class SettingsDialog(QDialog):
                 self,
                 "설치 실패",
                 f"플러그인 설치에 실패했습니다.\n\n"
-                "인터넷 연결을 확인하거나 수동으로 다음 명령을 실행해보세요:\n"
-                f"pip install {YtDlpPluginInstaller.PLUGIN_PACKAGE}"
+                "인터넷 연결을 확인하거나 로그를 확인해주세요.\n\n"
+                f"수동 설치 방법:\n"
+                f"1. {YtDlpPluginInstaller.GITHUB_REPO} 방문\n"
+                f"2. Code → Download ZIP\n"
+                f"3. yt_dlp_plugins 폴더를 다음 경로에 복사:\n"
+                f"   {YtDlpPluginInstaller.get_plugin_dir()}"
             )
 
-    def on_plugin_install_error(self, error_msg, progress):
+    def on_plugin_install_error(self, error_msg):
         """플러그인 설치 오류 콜백"""
-        progress.close()
+        if hasattr(self, 'plugin_progress') and self.plugin_progress:
+            self.plugin_progress.close()
+            self.plugin_progress = None
+
         QMessageBox.critical(
             self,
             "설치 오류",
-            f"플러그인 설치 중 오류가 발생했습니다:\n\n{error_msg}"
+            f"플러그인 설치 중 오류가 발생했습니다:\n\n{error_msg}\n\n"
+            f"수동 설치를 시도해보세요."
         )
 
     def check_ffmpeg(self):
