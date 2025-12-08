@@ -155,6 +155,51 @@ class SettingsDialog(QDialog):
         quality_group.setLayout(quality_layout)
         layout.addWidget(quality_group)
 
+        # 쿠키/인증 설정
+        cookie_group = QGroupBox("쿠키 인증 (YouTube Premium, 봇 검증 우회)")
+        cookie_layout = QFormLayout()
+
+        # 쿠키 사용 여부
+        self.cookies_enabled_check = QCheckBox("쿠키 인증 사용")
+        self.cookies_enabled_check.setChecked(config.get("cookies_enabled"))
+        self.cookies_enabled_check.toggled.connect(self.on_cookies_enabled_toggled)
+        cookie_layout.addRow("", self.cookies_enabled_check)
+
+        # 브라우저 선택 (방법 1 - 추천)
+        browser_h_layout = QHBoxLayout()
+        self.browser_combo = QComboBox()
+        self.browser_combo.addItems(["(사용 안 함)", "chrome", "firefox", "edge", "brave", "opera", "safari"])
+        current_browser = config.get("cookies_from_browser") or "(사용 안 함)"
+        if current_browser and current_browser != "(사용 안 함)":
+            self.browser_combo.setCurrentText(current_browser)
+        browser_h_layout.addWidget(self.browser_combo)
+        cookie_layout.addRow("브라우저에서 가져오기:", browser_h_layout)
+
+        browser_note = QLabel("브라우저에 로그인한 상태로 쿠키를 자동으로 가져옵니다 (권장)")
+        browser_note.setStyleSheet("color: gray; font-size: 9px;")
+        browser_note.setWordWrap(True)
+        cookie_layout.addRow("", browser_note)
+
+        # 쿠키 파일 경로 (방법 2 - 고급)
+        cookie_file_h_layout = QHBoxLayout()
+        self.cookies_file_edit = QLineEdit(config.get("cookies_file_path"))
+        self.cookies_file_btn = QPushButton("찾아보기")
+        self.cookies_file_btn.clicked.connect(self.browse_cookies_file)
+        cookie_file_h_layout.addWidget(self.cookies_file_edit)
+        cookie_file_h_layout.addWidget(self.cookies_file_btn)
+        cookie_layout.addRow("쿠키 파일 (고급):", cookie_file_h_layout)
+
+        file_note = QLabel("Netscape 형식 cookies.txt 파일. 브라우저 설정이 우선됩니다")
+        file_note.setStyleSheet("color: gray; font-size: 9px;")
+        file_note.setWordWrap(True)
+        cookie_layout.addRow("", file_note)
+
+        cookie_group.setLayout(cookie_layout)
+        layout.addWidget(cookie_group)
+
+        # 초기 상태 설정
+        self.on_cookies_enabled_toggled(self.cookies_enabled_check.isChecked())
+
         layout.addStretch()
         return widget
 
@@ -384,6 +429,23 @@ class SettingsDialog(QDialog):
         if path:
             self.ffmpeg_edit.setText(path)
 
+    def browse_cookies_file(self):
+        """쿠키 파일 선택"""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "쿠키 파일 선택 (Netscape 형식)",
+            "",
+            "Text Files (*.txt);;All Files (*.*)"
+        )
+        if path:
+            self.cookies_file_edit.setText(path)
+
+    def on_cookies_enabled_toggled(self, checked):
+        """쿠키 활성화 체크박스 토글 시 호출"""
+        self.browser_combo.setEnabled(checked)
+        self.cookies_file_edit.setEnabled(checked)
+        self.cookies_file_btn.setEnabled(checked)
+
     def check_ffmpeg(self):
         """FFmpeg 설치 여부 확인"""
         ffmpeg_path = FFmpegInstaller.check_ffmpeg()
@@ -475,6 +537,17 @@ class SettingsDialog(QDialog):
         config.set("ffmpeg_path", self.ffmpeg_edit.text())
         config.set("default_quality", self.quality_combo.currentText())
         config.set("output_format", self.format_combo.currentText())
+
+        # 쿠키 설정 저장
+        config.set("cookies_enabled", self.cookies_enabled_check.isChecked())
+
+        browser_selection = self.browser_combo.currentText()
+        if browser_selection == "(사용 안 함)":
+            config.set("cookies_from_browser", "")
+        else:
+            config.set("cookies_from_browser", browser_selection)
+
+        config.set("cookies_file_path", self.cookies_file_edit.text())
 
         # 성능 설정 저장
         config.set("concurrent_fragments", self.concurrent_spin.value())

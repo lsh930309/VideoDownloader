@@ -19,6 +19,11 @@ class Config:
         "benchmark_optimal_workers": None,  # 벤치마크로 찾은 최적 워커 수
         "benchmark_min_size_per_worker": 100,  # 벤치마크로 찾은 워커당 최소 크기 (MB)
 
+        # 쿠키 인증 설정 (YouTube Premium, 봇 검증 우회 등)
+        "cookies_enabled": False,  # 쿠키 사용 여부
+        "cookies_from_browser": "",  # 브라우저 이름 (chrome, firefox, edge, brave 등) - 비어있으면 비활성화
+        "cookies_file_path": "",  # 쿠키 파일 경로 (Netscape 형식) - 비어있으면 비활성화
+
         # 아래 옵션들은 하위 호환성을 위해 유지하지만 yt-dlp 자동 최적화에 맡김
         "chunk_size_mb": 10,  # (사용 안 함 - yt-dlp 자동 조절)
         "buffer_size_mb": 16,  # (사용 안 함 - yt-dlp 자동 조절)

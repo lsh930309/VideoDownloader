@@ -36,6 +36,32 @@ class VideoDownloader:
         print(f"[Downloader] 포맷 선택자: {format_str}")
         return format_str
 
+    def _apply_cookie_settings(self, ydl_opts):
+        """
+        쿠키 설정을 yt-dlp 옵션에 적용
+
+        YouTube Premium 기능 및 봇 검증 우회를 위해 사용
+        """
+        cookies_enabled = config.get("cookies_enabled")
+        if not cookies_enabled:
+            return
+
+        # 방법 1: 브라우저에서 자동으로 쿠키 가져오기 (우선순위)
+        cookies_from_browser = config.get("cookies_from_browser")
+        if cookies_from_browser:
+            ydl_opts['cookiesfrombrowser'] = (cookies_from_browser,)
+            print(f"[Downloader] 쿠키 활성화: 브라우저 '{cookies_from_browser}'에서 가져오기")
+            return
+
+        # 방법 2: 쿠키 파일 직접 지정
+        cookies_file = config.get("cookies_file_path")
+        if cookies_file and os.path.exists(cookies_file):
+            ydl_opts['cookiefile'] = cookies_file
+            print(f"[Downloader] 쿠키 활성화: 파일 '{cookies_file}' 사용")
+            return
+
+        print("[Downloader] 쿠키 활성화되어 있으나 유효한 설정이 없습니다")
+
     def get_video_info(self, url):
         """
         영상 정보 추출
@@ -53,6 +79,10 @@ class VideoDownloader:
             # 네트워크 타임아웃 설정
             'socket_timeout': 30,
         }
+
+        # 쿠키 설정 추가
+        self._apply_cookie_settings(ydl_opts)
+
         try:
             print(f"[Downloader] 영상 정보 추출 시작...")
             print(f"[Downloader] 캐시 디렉토리: {self.yt_dlp_cache_dir}")
@@ -242,6 +272,9 @@ class VideoDownloader:
 
         if ffmpeg_path:
             ydl_opts['ffmpeg_location'] = ffmpeg_path
+
+        # 쿠키 설정 추가
+        self._apply_cookie_settings(ydl_opts)
 
         print(f"[Downloader] yt-dlp 임시 파일 디렉토리: {self.yt_dlp_temp_dir}")
 
