@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QPushButton, QProgressBar, QTextEdit,
                              QLabel, QComboBox, QMessageBox, QMenuBar, QApplication)
 from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal, QObject
+from PyQt6.QtGui import QTextCursor
 from qasync import QEventLoop, asyncSlot
 
 from src.core.downloader import VideoDownloader
@@ -171,22 +172,45 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(int(percent))
 
     def update_status(self, message):
-        # 다운로드 진행 상황 메시지는 같은 줄에 덮어쓰기 (\r 효과)
-        if "다운로드 중:" in message or "Downloading:" in message:
-            # 상태바에도 표시
-            self.statusBar().showMessage(message)
+        """
+        다운로드 진행 상황 메시지는 같은 줄에 덮어쓰기 (\r 효과)
 
-            # 로그 영역에서 마지막 줄 덮어쓰기
+        QTextEdit에서 마지막 줄을 덮어쓰는 가장 확실한 방법:
+        QTextDocument의 마지막 블록을 제거하고 새 내용 삽입
+        """
+        # 상태바에 표시
+        self.statusBar().showMessage(message)
+
+        # 다운로드 진행 상황 메시지는 같은 줄 갱신
+        if "다운로드 중:" in message or "Downloading:" in message or "속도:" in message:
+            cursor = self.log_area.textCursor()
+
+            # 마지막 줄이 진행 상황 메시지였다면 제거
             if self.last_status_line is not None:
-                # 마지막 줄 삭제
-                cursor = self.log_area.textCursor()
-                cursor.movePosition(cursor.MoveOperation.End)
-                cursor.select(cursor.SelectionType.BlockUnderCursor)
-                cursor.removeSelectedText()
-                cursor.deletePreviousChar()  # 줄바꿈 문자 제거
+                # 문서 끝으로 이동
+                cursor.movePosition(QTextCursor.MoveOperation.End)
 
-            # 새 상태 추가
-            self.log_area.append(f"<span style='color: blue;'>{message}</span>")
+                # 현재 블록의 시작으로 이동
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+
+                # 블록 전체 선택
+                cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+
+                # 선택된 블록 제거
+                cursor.removeSelectedText()
+
+                # 블록 자체도 제거 (줄바꿈 문자 제거)
+                cursor.deletePreviousChar()
+
+            # 커서를 문서 끝으로 이동
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+
+            # 새 메시지 삽입 (HTML 형식)
+            cursor.insertHtml(f"<span style='color: blue;'>{message}</span>")
+            cursor.insertBlock()  # 줄바꿈
+
+            # 커서 업데이트
+            self.log_area.setTextCursor(cursor)
             self.scroll_to_bottom()
             self.last_status_line = message
         else:
